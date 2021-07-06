@@ -10,8 +10,14 @@ commands:
           name: Destroy environments
           when: on_fail
           command: |
-            # Your code here
-            exit 1
+            aws cloudformation delete-stack --stack-name backend-${CIRCLE_WORKFLOW_ID}
+            aws cloudformation delete-stack --stack-name frontend-${CIRCLE_WORKFLOW_ID}
+      - run:
+          name: Delete s3 bucket
+          when: on_fail
+          command: |
+            aws S3 rm s3://udapeople-${CIRCLE_WORKFLOW_ID}
+
 
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
@@ -20,51 +26,81 @@ commands:
     steps:
       - run:
           name: Revert migrations
+          working_directory: ./backend
           # Add when this will run
           command: |
+            SUCCESS=$(curl -H "token: c9c28e9f-179a-42bb-a78c-55671d15c8b7" --request GET https://api.memstash.io/values/DB_MIGRATION_on_fail)
             # Curl command here to see if there was a successful migration associated with the workflow id, store result in SUCCESS variable
             SUCCESS = 1
             if(( $SUCCESS==1 )); 
             then
-            #  cd ~/project/backend
-            #  npm install
-            #  Add revert code here. You can find this in the Getting Started section.
-              exit 1
+              pwd
+              ls -la
+              npm run migration:revert
             fi
+          when: on_fail
             
 jobs:
+  install-backend-dependencies:
+    docker:
+      - image: circleci/node:13.8.0
+    steps:
+      - checkout
+      - run:
+          name: npm install
+          working_directory: ./backend
+          command: ls -la && npm install
+      - save_cache:
+          key: v1-backend-build
+          paths:
+            - ~/project/backend/node_modules
+
+  install-frontend-dependencies:
+    docker:
+      - image: circleci/node:13.8.0
+    steps:
+      - checkout
+      - run:
+          name: npm install
+          working_directory: ./frontend
+          command: ls -la && npm install
+      - save_cache:
+          key: v1-backfrontend-build
+          paths:
+            - ~/project/frontend/node_modules
+ 
   build-frontend:
     docker:
       - image: circleci/node:13.8.0
     steps:
       - checkout
-      - restore_cache:
-          keys: [frontend-build]
+      - attach_workspace:
+          at: .
       - run:
           name: Build front-end
-          command: |
-            # Your code here
-            exit 1
+          working_directory: ./frontend
+          command: npm run build 
       - save_cache:
-          paths: [frontend/node_modules]
-          key: frontend-build
+          key: v1-frontend-build
+          paths:
+            - ~/project/frontend/node_modules
 
   build-backend:
     docker:
       - image: circleci/node:13.8.0
     steps:
       - checkout
-      - restore_cache:
-          keys: [backend-build]
+      - attach_workspace:
+          at: .
       - run:
           name: Back-end build
-          command: |
-             # Your code here
-             exit 1
+          working_directory: ./backend
+          command: npm run build
       - save_cache:
-          paths: [backend/node_modules]
-          key: backend-build
-
+          key: v1-backend-build
+          paths:
+            - ~/project/backend/node_modules
+  
   test-frontend:
     docker:
       # Docker image here
@@ -266,32 +302,34 @@ cleanup:
 workflows:
   default:
     jobs:
+      - install-backend-dependencies
+      - install-frontend-dependencies
       - build-frontend
       - build-backend
-      - test-frontend:
-          requires: [build-frontend]
-      - test-backend:
-          requires: [build-backend]
-      - scan-backend:
-          requires: [build-backend]
-      - scan-frontend:
-          requires: [build-frontend]
-      - deploy-infrastructure:
-          requires: [test-frontend, test-backend, scan-frontend, scan-backend]
-          filters:
-            branches:
-              only: [test-feature-branch]
-      - configure-infrastructure:
-          requires: [deploy-infrastructure]
-      - run-migrations:
-          requires: [configure-infrastructure]
-      - deploy-frontend:
-          requires: [run-migrations]
-      - deploy-backend:
-          requires: [run-migrations]
-      - smoke-test:
-          requires: [deploy-backend, deploy-frontend]
-      - cloudfront-update:
-          requires: [smoke-test]
-      - cleanup:
-          requires: [cloudfront-update]
+   #   - test-frontend:
+   #       requires: [build-frontend]
+   #   - test-backend:
+    #      requires: [build-backend]
+    #  - scan-backend:
+   #       requires: [build-backend]
+    #  - scan-frontend:
+     #     requires: [build-frontend]
+      #- deploy-infrastructure:
+       #   requires: [test-frontend, test-backend, scan-frontend, scan-backend]
+        #  filters:
+       #     branches:
+        #      only: [test-feature-branch]
+     # - configure-infrastructure:
+      #    requires: [deploy-infrastructure]
+      #- run-migrations:
+      #    requires: [configure-infrastructure]
+     # - deploy-frontend:
+    #      requires: [run-migrations]
+     # - deploy-backend:
+      #    requires: [run-migrations]
+     # - smoke-test:
+     #     requires: [deploy-backend, deploy-frontend]
+    #  - cloudfront-update:
+     #     requires: [smoke-test]
+    #  - cleanup:
+     #     requires: [cloudfront-update]
